@@ -8,6 +8,10 @@ import com.squareup.moshi.JsonClass
  * or formatting objects to send to the server. You should convert these to domain objects before
  * using them.
  *
+ * 數據傳輸對像用於解析網絡結果。
+ * 此文件還包含一個方便的方法 ，asDomainModel()用於將網絡結果轉換為域對象列表。
+ * 數據傳輸對象與域對像不同，因為它們包含用於解析網絡結果的額外邏輯。
+ *
  * @see domain package for
  */
 
