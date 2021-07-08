@@ -1,5 +1,6 @@
 package com.example.devbytes.network
 
+import com.example.devbytes.database.DatabaseVideo
 import com.example.devbytes.domain.DevByteVideo
 import com.squareup.moshi.JsonClass
 
@@ -52,3 +53,19 @@ fun NetworkVideoContainer.asDomainModel(): List<DevByteVideo> {
             thumbnail = it.thumbnail)
     }
 }
+
+/**
+ * Convert Network results to database objects
+ * 創建一個名為asDatabaseModel(). 使用該函數將網絡對象轉換為DatabaseVideo數據庫對象。
+ */
+fun NetworkVideoContainer.asDatabaseModel(): List<DatabaseVideo> {
+    return videos.map {
+        DatabaseVideo(
+            title = it.title,
+            description = it.description,
+            url = it.url,
+            updated = it.updated,
+            thumbnail = it.thumbnail)
+    }
+}
+
