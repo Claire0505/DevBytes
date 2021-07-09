@@ -139,7 +139,84 @@ val videos: LiveData<List<DevByteVideo>> = Transformations.map(database.videoDao
 }
    
 ---
+## 使用刷新策略集成存儲庫
+[https://developer.android.com/codelabs/kotlin-android-training-repository#7]
 
+在此任務中，您將ViewModel使用簡單的刷新策略將存儲庫與 集成。您從Room數據庫中顯示視頻播放列表，而不是直接從網絡中獲取。
+
+1. 在viewmodels/DevByteViewModel.kt, 內部DevByteViewModel類中，創建一個private名為videosRepository的成員變量VideosRepository。通過傳入單例VideosDatabase對象來實例化變量。
+```
+/**
+* The data source this ViewModel will fetch results from.
+*/
+private val videosRepository = VideosRepository(getDatabase(application))
+```
+
+2. 在DevByteViewModel類中，將refreshDataFromNetwork()方法替換為refreshDataFromRepository()方法。
+
+舊方法refreshDataFromNetwork()使用 Retrofit 庫從網絡中獲取視頻播放列表。新方法從存儲庫加載視頻播放列表。
+```
+   /**
+     * Refresh data from the repository.
+       Use a coroutine launch to run in a
+     * background thread.
+     */
+    private fun refreshDataFromRepository() {
+        viewModelScope.launch {
+            try {
+                videosRepository.refreshVideos()
+                _eventNetworkError.value = false
+                _isNetworkErrorShown.value = false
+
+            }catch (netWorkError: IOException){
+                // Show a Toast error message and hide teh progress bar
+                if (playlist.value.isNullOrEmpty())
+                    _eventNetworkError.value = true
+            }
+        }
+    }
+```
+3. 在DevByteViewModel類中的init塊內，將函數調用從 更改refreshDataFromNetwork()為refreshDataFromRepository()。此代碼從存儲庫中獲取視頻播放列表，而不是直接從網絡中獲取。
+```
+init {
+   refreshDataFromRepository()
+}
+
+```
+4. 在DevByteViewModel類中，刪除_playlist屬性及其支持屬性playlist。
+```
+private val _playlist = MutableLiveData<List<Video>>()
+...
+val playlist: LiveData<List<Video>>
+   get() = _playlist
+
+```
+5. 在DevByteViewModel類中，實例化對videosRepository像後，添加一個新val調用，playlist用於保存LiveData存儲庫中的視頻列表。
+
+```
+/**
+* A playlist of videos displayed on the screen.
+*/
+val playlist = videosRepository.videos
+```
+6. 運行您的應用程序。該應用程序像以前一樣運行，但現在從網絡獲取 DevBytes 播放列表並保存在Room數據庫中。播放列表從Room數據庫顯示在屏幕上，而不是直接來自網絡。
+
+>如果運行時發生錯誤
+Android room persistent: AppDatabase_Impl does not exist
+則開啟 build.gradle (app) 加上：
+```
+    def room_version = "2.3.0"
+
+    implementation("androidx.room:room-runtime:$room_version")
+    annotationProcessor 
+    "androidx.room:room-compiler:$room_version"
+
+    // To use Kotlin annotation processing tool (kapt)
+    kapt("androidx.room:room-compiler:$room_version")
+
+ ```   
+ ---
+ 
 
 
 
