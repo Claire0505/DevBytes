@@ -17,12 +17,30 @@
 package com.example.devbytes
 
 import android.app.Application
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.devbytes.work.RefreshDataWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.TimeUnit
 
 /**
  * Override application to setup background work via WorkManager
  */
 class DevByteApplication : Application() {
+
+    private val applicationScope = CoroutineScope ( Dispatchers.Default)
+
+    private fun delayedInit(){
+        applicationScope.launch {
+            Timber.plant(Timber.DebugTree())
+            setupRecurringWork()
+        }
+    }
 
     /**
      * onCreate is called before the first screen is shown to the user.
@@ -32,8 +50,24 @@ class DevByteApplication : Application() {
      */
     override fun onCreate() {
         super.onCreate()
-        if (BuildConfig.DEBUG) {
-            Timber.plant(Timber.DebugTree())
-        }
+        delayedInit()
+    }
+
+    /**
+     * 創建一個調用方法 [setupRecurringWork()]來設置重複的後台工作。
+     * Setup WorkManager background job to 'fetch' new network data daily.
+     *  設置 WorkManager 後台作業以每天“獲取”新的網絡數據。
+     *  Recurring (再次發生的)
+     *  使用該方法創建並初始化一個每天運行一次的定期工作請求 PeriodicWorkRequestBuilder()。
+     *  傳入RefreshDataWorker您在上一個任務中創建的類。1以 的時間單位傳入重複間隔TimeUnit.DAYS。
+     */
+    private fun setupRecurringWork(){
+        val repeatingRequest =
+            PeriodicWorkRequestBuilder<RefreshDataWorker>(1, TimeUnit.DAYS).build()
+
+        WorkManager.getInstance().enqueueUniquePeriodicWork(
+            RefreshDataWorker.WORK_NAME,
+        ExistingPeriodicWorkPolicy.KEEP,
+        repeatingRequest)
     }
 }

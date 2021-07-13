@@ -18,6 +18,10 @@ import timber.log.Timber
 class RefreshDataWorker(appContext: Context, params: WorkerParameters) :
     CoroutineWorker(appContext, params) {
 
+    companion object {
+        const val WORK_NAME = "com.example.devbytes.work.RefreshDataWorker"
+    }
+
     // 創建並實例化一個VideosDatabase對象和一個VideosRepository對象。
     override suspend fun doWork(): Result {
         val database = getDatabase(applicationContext)
