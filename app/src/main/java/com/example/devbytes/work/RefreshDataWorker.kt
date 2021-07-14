@@ -28,8 +28,8 @@ class RefreshDataWorker(appContext: Context, params: WorkerParameters) :
         val repository = VideosRepository(database)
 
         try {
-            Timber.d("Work request for sync is run  運行同步工作請求")
             repository.refreshVideos()
+            Timber.d("WorkManager: Work request for sync is run  運行同步工作請求")
 
         } catch (e: HttpException){
             return  Result.retry()

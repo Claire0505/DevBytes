@@ -17,9 +17,8 @@
 package com.example.devbytes
 
 import android.app.Application
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
+import android.os.Build
+import androidx.work.*
 import com.example.devbytes.work.RefreshDataWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,13 +34,6 @@ class DevByteApplication : Application() {
 
     private val applicationScope = CoroutineScope ( Dispatchers.Default)
 
-    private fun delayedInit(){
-        applicationScope.launch {
-            Timber.plant(Timber.DebugTree())
-            setupRecurringWork()
-        }
-    }
-
     /**
      * onCreate is called before the first screen is shown to the user.
      *
@@ -53,6 +45,13 @@ class DevByteApplication : Application() {
         delayedInit()
     }
 
+    private fun delayedInit(){
+        applicationScope.launch {
+            Timber.plant(Timber.DebugTree())
+            setupRecurringWork()
+        }
+    }
+
     /**
      * 創建一個調用方法 [setupRecurringWork()]來設置重複的後台工作。
      * Setup WorkManager background job to 'fetch' new network data daily.
@@ -62,10 +61,35 @@ class DevByteApplication : Application() {
      *  傳入RefreshDataWorker您在上一個任務中創建的類。1以 的時間單位傳入重複間隔TimeUnit.DAYS。
      */
     private fun setupRecurringWork(){
-        val repeatingRequest =
-            PeriodicWorkRequestBuilder<RefreshDataWorker>(1, TimeUnit.DAYS).build()
+        /**
+         * 創建一個Constraints對象並在該對像上設置一個約束，即網絡類型約束。
+         * 使用setRequiredNetworkType()方法向對象添加網絡類型約束constraints。
+         * 使用UNMETERED枚舉以便工作請求僅在設備位於 UNMETERED(未計量 )的網絡上時運行。
+         */
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.UNMETERED)
+            .setRequiresCharging(true)  // 更新工作請求，使其僅在設備充電時運行。
+            .setRequiresBatteryNotLow(true)  // 只有在電池電量不低時才運行工作請求。
+            .apply {
+                // 此功能僅在 Android 6.0 (Marshmallow) 及更高版本中可用，因此請為 SDK 版本M及更高版本添加條件。
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
+                    setRequiresDeviceIdle(true)
+                }
+            }.build()
 
-        WorkManager.getInstance().enqueueUniquePeriodicWork(
+        val repeatingRequest1 =
+            PeriodicWorkRequestBuilder<RefreshDataWorker>(1, TimeUnit.DAYS)
+                .setConstraints(constraints)
+                .build()
+
+        // 打開設備或模擬器中的 Wi-Fi 並查看Logcat窗格。
+        // 現在，只要滿足網絡限制，計劃的後台任務大約每 15 分鐘運行一次。
+        val repeatingRequest = PeriodicWorkRequestBuilder<RefreshDataWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .build()
+
+        Timber.d("WorkManager: Periodic Work request for sync is scheduled 計劃同步的定期工作請求")
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
             RefreshDataWorker.WORK_NAME,
         ExistingPeriodicWorkPolicy.KEEP,
         repeatingRequest)
