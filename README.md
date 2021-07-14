@@ -216,7 +216,283 @@ Android room persistent: AppDatabase_Impl does not exist
 
  ```   
  ---
- 
+ # 如何使用WorkManager調度後台任務
+[https://developer.android.com/codelabs/kotlin-android-training-work-manager#0]
+
+## 概念：WorkManager
+
+WorkManager是Android 架構組件之一，也是Android Jetpack 的一部分。WorkManager用於可延遲且需要保證執行的後台工作：
+
+* 可延遲意味著工作不需要立即運行。例如，向服務器發送分析數據或在後台同步數據庫是可以推遲的工作。
+
+* 保證執行意味著即使應用程序退出或設備重新啟動，任務也會運行。
+
+WorkManager是一個 API，它可以輕鬆安排可靠的異步任務，即使應用程序退出或設備重新啟動，這些任務也有望運行。
+
+>筆記：
+WorkManager 不適用於在應用進程被終止時可以安全終止的進程內後台工作。
+WorkManager 不適用於需要立即執行的任務。
+---
+
+
+ # [任務：創建一個後台工作者](https://developer.android.com/codelabs/kotlin-android-training-work-manager#5)
+
+在此 Codelab 中，您安排一項任務，每天一次從網絡中預取 DevBytes 視頻播放列表。要安排此任務，請使用WorkManager庫。
+```
+    // WorkManager dependency
+    def work_version = "2.5.0"
+    // Kotlin + coroutines
+    implementation("androidx.work:work-runtime-ktx:$work_version")
+```
+
+* [Worker](https://developer.android.com/reference/androidx/work/Worker.html)
+此類是您定義要在後台運行的實際工作（任務）的地方。您擴展此類並覆蓋該doWork()方法。該doWork()方法是放置在後台中執行的代碼，諸如與服務器同步數據或處理圖像。您Worker在此任務中實施。
+
+* [WorkRequest](https://developer.android.com/reference/androidx/work/WorkRequest.html)
+此類表示在後台運行工作程序的請求。使用WorkRequest配置如何以及何時運行輔助任務的幫助下Constraints為設備插上電源或Wi-Fi連接等。您將WorkRequest在稍後的任務中實現。
+
+---
+## 第 1 步： Create a worker
+1. 創建一個名為work package，創建 Kotlin 類 RefreshDataWorker。
+2. RefreshDataWorker從CoroutineWorker類擴展類。將context和WorkerParameters作為構造函數參數傳入。
+```
+class RefreshDataWorker(appContext: Context, params: WorkerParameters) :
+       CoroutineWorker(appContext, params) {
+}
+```
+3. 要解決抽像類錯誤，請覆蓋類doWork()內的方法RefreshDataWorker。
+```
+override suspend fun doWork(): Result {
+  return Result.success()
+}
+```
+>一個暫停的功能是可以暫停和恢復後的功能。掛起函數可以執行長時間運行的操作並等待它完成而不阻塞主線程。
+
+## 第 2 步：實現 doWork()
+The doWork() method inside the Worker class is called on a background thread. The method performs work synchronously, and should return a ListenableWorker.Result object.
+
+Android 系統Worker最多給 10 分鐘的時間來完成它的執行並返回一個ListenableWorker.Result對象。超過此時間後，系統會強制停止Worker. 
+
+---
+要創建ListenableWorker.Result對象，請調用以下靜態方法之一來指示後台工作的完成狀態：
+* Result.success()——工作順利完成。
+* Result.failure()——工作以永久失敗告終。
+* Result.retry()— 工作遇到暫時性故障，應重試。
+
+在此任務中，您將實現doWork()從網絡獲取 DevBytes 視頻播放列表的方法。您可以重用類中的現有方法VideosRepository來從網絡中檢索數據。
+
+1. 在RefreshDataWorker類裡面doWork()，創建並實例化一個VideosDatabase對象和一個VideosRepository對象。
+2. 在RefreshDataWorker類中， inside doWork()，在return語句上方，調用塊refreshVideos()內的方法try。添加日誌以跟踪工作程序何時運行。
+
+```
+class RefreshDataWorker(appContext: Context, params: WorkerParameters) :
+       CoroutineWorker(appContext, params) {
+
+   override suspend fun doWork(): Result {
+       val database = getDatabase(applicationContext)
+       val repository = VideosRepository(database)
+       try {
+           repository.refreshVideos()
+       } catch (e: HttpException) {
+           return Result.retry()
+       }
+       return Result.success()
+   }
+}
+```
+---
+# [任務：定義一個週期性的 WorkRequest](https://developer.android.com/codelabs/kotlin-android-training-work-manager#6)
+
+Worker定義了一個工作單元，並且[WorkRequest](https://developer.android.com/reference/androidx/work/WorkRequest)
+定義了工作應該如何以及何時運行。WorkRequest該類有兩個具體實現：
+
+* 該[OneTimeWorkRequest](https://developer.android.com/reference/androidx/work/OneTimeWorkRequest.html)
+課程適用於一次性任務。（一次性任務只發生一次。）
+
+* 該[PeriodicWorkRequest](https://developer.android.com/reference/androidx/work/PeriodicWorkRequest.html)
+課程適用於定期工作，即每隔一段時間重複的工作。
+
+>注意：週期性工作的最小間隔為 15 分鐘。週期性工作不能將初始延遲作為其約束之一。
+
+## 第 1 步：設置重複工作
+
+在 Android 應用程序中，Application該類是包含所有其他組件（例如活動和服務）的基類。創建應用程序或包的進程時，Application類（或任何子類Application）在任何其他類之前實例化。
+
+1. 在DevByteApplication該類中，創建一個調用方法setupRecurringWork()來設置重複的後台工作。
+```
+/**
+* Setup WorkManager background job to 'fetch'
+   new network data daily.
+*/
+private fun setupRecurringWork() {
+}
+```
+2. 在該setupRecurringWork()方法中，使用該方法創建並初始化一個每天運行一次的定期工作請求PeriodicWorkRequestBuilder()。傳入[RefreshDataWorker](https://developer.android.com/reference/androidx/work/PeriodicWorkRequest.Builder)
+您在上一個任務中創建的類。以 1的時間單位傳入重複間隔TimeUnit.DAYS。
+
+```
+val repeatingRequest = PeriodicWorkRequestBuilder<RefreshDataWorker>(1, TimeUnit.DAYS)
+       .build()
+```
+## 步驟 2：使用 WorkManager 安排 WorkRequest
+
+在定義了WorkRequest 之後，您可以WorkManager使用[enqueueUniquePeriodicWork()](https://developer.android.com/reference/androidx/work/WorkManager.html#enqueueUniquePeriodicWork(java.lang.String,%20androidx.work.ExistingPeriodicWorkPolicy,%20androidx.work.PeriodicWorkRequest))
+方法來安排它。此方法允許您將唯一名稱添加[PeriodicWorkRequest](https://developer.android.com/reference/androidx/work/PeriodicWorkRequest.html)
+到隊列中，其中一次只能有PeriodicWorkRequest一個特定名稱處於活動狀態。
+1. 在RefreshDataWorker類中，在類的開頭，添加一個伴生對象。定義一個工作名稱以唯一標識此 Worker。
+```
+ companion object {
+        const val WORK_NAME = "com.example.devbytes.work.RefreshDataWorker"
+    }
+```
+2. 在DevByteApplication.class，在setupRecurringWork()方法結束時，使用方法安排工作enqueueUniquePeriodicWork()。傳入KEEPExistingPeriodicWorkPolicy(現有的定期工作政策)的枚舉。
+傳入 repeatingRequest的PeriodicWorkRequest參數。
+```
+WorkManager.getInstance().enqueueUniquePeriodicWork(
+       RefreshDataWorker.WORK_NAME,
+       ExistingPeriodicWorkPolicy.KEEP,
+       repeatingRequest)
+```
+>最佳實踐：該onCreate()方法在主線程中運行。執行長時間運行的操作onCreate()可能會阻塞 UI 線程並導致加載應用程序延遲。為避免此問題WorkManager，請在協程內運行諸如初始化 Timber 和從主線程調度之類的任務。
+
+3. 在DevByteApplication類的開頭，創建一個CoroutineScope對象。通過在Dispatchers.Default作為構造函數的參數。
+```
+private val applicationScope = CoroutineScope(Dispatchers.Default)
+```
+4. 在DevByteApplication該類中，添加一個名為delayedInit()啟動協程的新方法。
+5. 在delayedInit()方法內部，調用setupRecurringWork().
+6. 將 Timber 初始化從onCreate()方法移動到delayedInit()方法。
+```
+private fun delayedInit() {
+   applicationScope.launch {
+       Timber.plant(Timber.DebugTree())
+       setupRecurringWork()
+   }
+}
+```
+7. 在DevByteApplication類中，在onCreate()方法的末尾，添加對方法的調用delayedInit()。
+```
+override fun onCreate() {
+   super.onCreate()
+   delayedInit()
+}
+```
+8. 打開Android Studio 窗口底部的Logcat窗格。過濾RefreshDataWorker。
+9. 運行應用程序。該WorkManager時間表的經常性的工作立即。
+```
+在Logcat窗格中，請注意顯示工作請求已調度，然後成功運行的日誌語句。
+D/RefreshDataWorker: Work request for sync is run
+I/WM-WorkerWrapper: Worker result SUCCESS for Work [...]
+```
+
+## 第 3 步：（可選）將 WorkRequest 安排為最小間隔
+在此步驟中，您將時間間隔從 1 天減少到 15 分鐘。這樣做是為了查看正在運行的定期工作請求的日誌。
+1. 在DevByteApplication類中的setupRecurringWork()方法中，註釋掉當前repeatingRequest定義。以15分鐘為周期的重複間隔添加新的工作請求。
+```
+// val repeatingRequest = PeriodicWorkRequestBuilder<RefreshDataWorker>(1, TimeUnit.DAYS)
+//        .build()
+
+val repeatingRequest = PeriodicWorkRequestBuilder<RefreshDataWorker>(15, TimeUnit.MINUTES)
+       .build()
+ ```      
+ 2. 運行應用程序，並WorkManager立即安排您的重複工作。在Logcat窗格中，注意日誌——工作請求每 15 分鐘運行一次。等待 15 分鐘以查看另一組工作請求日誌。
+ ---
+
+# [任務：添加約束 (Constraints)](https://developer.android.com/codelabs/kotlin-android-training-work-manager#7)
+
+定義WorkRequest時，您可以指定Worker應該運行的約束。例如，您可能希望指定工作應僅在設備空閒時運行，或僅在設備插入並連接到 Wi-Fi 時運行。您還可以為重試工作指定退避策略。在支持的限制是在set方法Constraints.Builder。
+
+>PeriodicWorkRequest(定期工作請求) 和 Constraints (約束)
+ PeriodicWorkRequest，用於重複工作會執行多次，直到被取消。第一次執行立即發生，或者在滿足給定的約束後立即執行。
+下一次執行發生在下一個週期間隔內。請注意，執行可能會延遲，因為WorkManager受操作系統電池優化的影響，例如當設備處於打盹模式時。
+
+## 第 1 步：添加一個 Constraints 對象並設置一個約束
+在此步驟中，您將創建一個Constraints對象並在該對像上設置一個約束，即網絡類型約束。
+
+1. 在DevByteApplication類中，在開頭setupRecurringWork()，定義val類型為的Constraints。使用Constraints.Builder()方法。
+```
+val constraints = Constraints.Builder()
+```
+2. 使用setRequiredNetworkType()方法向對象添加網絡類型約束constraints。使用UNMETERED枚舉以便工作請求僅在設備位於未計量的網絡上時運行。
+```
+.setRequiredNetworkType(NetworkType.UNMETERED)
+```
+3. 使用build()方法從構建器生成約束。
+```
+val constraints = Constraints.Builder()
+       .setRequiredNetworkType(NetworkType.UNMETERED)
+       .build()
+```
+現在您需要將新創建的Constraints對象設置為工作請求。
+
+4. 在DevByteApplication類中的setupRecurringWork()方法中，將Constraints對象設置為定期工作請求repeatingRequest。要設置約束，請setConstraints()在build()方法調用上方添加方法。
+```
+val repeatingRequest = PeriodicWorkRequestBuilder<RefreshDataWorker>(15, TimeUnit.MINUTES)
+               .setConstraints(constraints)
+               .build()
+ ```
+## 第 2 步：運行應用程序並註意日誌
+ 在此步驟中，您運行應用程序並註意到受約束的工作請求每隔一段時間在後台運行。
+1. 從設備或模擬器卸載應用程序以取消任何先前計劃的任務。
+
+2. 在 Android Studio 中打開Logcat窗格。在Logcat窗格中，通過單擊左側的清除 logcat圖標清除以前的日誌。過濾work。
+
+3. 關閉設備或模擬器中的 Wi-Fi，這樣您就可以看到約束是如何工作的。當前代碼只設置了一個約束，表明請求應該只在未計量的網絡上運行。由於 Wi-Fi 關閉，設備未連接到網絡，無論按流量計費還是不按流量計費。因此，將不會滿足此約束。
+
+4. 運行應用程序並註意Logcat窗格。該WorkManager調度後台任務立即。因為不滿足網絡約束，任務沒有運行。 
+5. 打開設備或模擬器中的 Wi-Fi 並查看Logcat窗格。現在，只要滿足網絡限制，計劃的後台任務大約每 15 分鐘運行一次。
+```
+11:31:44 D/DevByteApplication: Periodic Work request for sync is scheduled
+11:31:47 D/RefreshDataWorker: Work request for sync is run
+11:31:47 I/WM-WorkerWrapper: Worker result SUCCESS for Work [...]
+11:46:45 D/RefreshDataWorker: Work request for sync is run
+11:46:45 I/WM-WorkerWrapper: Worker result SUCCESS for Work [...] 
+```
+ ## 第 3 步：添加更多約束
+ 在此步驟中，您將以下約束添加到PeriodicWorkRequest：
+* 電池電量不低。
+* 設備充電。
+* 設備空閒；僅在 API 級別 23 (Android M) 及更高版本中可用。
+
+1. 在DevByteApplication類中的setupRecurringWork()方法內部，指示只有在電池電量不低時才運行工作請求。在build()方法調用之前添加約束，並使用該setRequiresBatteryNotLow()方法。
+
+2. 更新工作請求，使其僅在設備充電時運行。在build()方法調用之前添加約束，並使用該setRequiresCharging()方法。
+
+3. 更新工作請求，使其僅在設備空閒時運行。在build()方法調用之前添加約束，並使用setRequiresDeviceIdle()方法。此約束僅在用戶未主動使用設備時運行工作請求。此功能僅在 Android 6.0 (Marshmallow) 及更高版本中可用，因此請為 SDK 版本M及更高版本添加條件。
+
+```
+val constraints = Constraints.Builder()
+       .setRequiredNetworkType(NetworkType.UNMETERED)
+       .setRequiresBatteryNotLow(true)
+       .setRequiresCharging(true)
+       .apply {
+           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+               setRequiresDeviceIdle(true)
+           }
+       }
+       .build()
+ ```
+ 4. 在setupRecurringWork()方法內部，將請求間隔改回每天一次。   
+ ---
+## 總結
+* 該WorkManagerAPI可以很容易地安排必須可靠地運行延遲的，異步任務。
+
+* 大多數現實世界的應用程序需要執行長時間運行的後台任務。要以優化和有效的方式安排後台任務，請使用WorkManager.
+
+* 在主要的類WorkManager庫中Worker，WorkRequest和WorkManager。
+* 本Worker類代表一個工作單元。要實現後台任務，請擴展Worker該類並覆蓋該[doWork()](https://developer.android.com/reference/androidx/work/Worker.html#doWork())方法。
+
+* WorkRequest類表示以執行工作單元的請求。WorkRequest是用於安排的工作指定參數的基類WorkManager。
+
+* WorkRequest該類有兩種具體實現：OneTimeWorkRequest用於一次性任務和PeriodicWorkRequest用於定期工作請求。
+
+* 定義WorkRequest時，您可以指定Constraints指示Worker應何時運行。約束包括設備是否已插入、設備是否空閒或是否已連接 Wi-Fi。
+
+* 要添加約束的WorkRequest，使用中列出的設置方法的Constraints.Builder文檔。例如，要指示WorkRequest設備電池電量低時不應運行，請使用setRequiresBatteryNotLow()set 方法。
+
+* 定義之後WorkRequest，將任務交給 Android 系統。為此，請使用其中一種WorkManager enqueue方法安排任務。
+* 執行的確切時間Worker取決於 中使用的約束WorkRequest，以及系統優化。WorkManager鑑於這些限制，旨在提供最佳行為。 
+   
 
 
 
